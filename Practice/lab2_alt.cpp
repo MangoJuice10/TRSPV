@@ -1,3 +1,4 @@
+#include "lab2_alt.h"
 #include <iostream>
 #include <math.h>
 #include <string>
@@ -34,7 +35,7 @@ void printMatrix(T(&matrix)[R][C]) {
 	cout << matrixToStr(matrix) << endl;
 }
 
-int main(int argc, char* argv[]) {
+void lab2_alt(int argc, char* argv[]) {
 	MPI_Init(&argc, &argv);
 	int rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -194,5 +195,4 @@ int main(int argc, char* argv[]) {
 	if (worldGroup != MPI_GROUP_NULL) MPI_Group_free(&worldGroup);
 
 	MPI_Finalize();
-	return 0;
 }
