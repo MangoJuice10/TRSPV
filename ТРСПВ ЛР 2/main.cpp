@@ -44,9 +44,7 @@ void printMatrix(double(&matrix)[R][C]) {
 int main(int argc, char* argv[]) {
 	MPI_Init(&argc, &argv);
 	int rank;
-	int size;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	MPI_Comm_size(MPI_COMM_WORLD, &size);
 
 	const size_t
 		ROWS_NUM = 10,
@@ -143,8 +141,10 @@ int main(int argc, char* argv[]) {
 		int minGroupRank;
 		MPI_Comm_rank(MPI_COMM_MIN, &minGroupRank);
 
-
-		MPI_Scatterv(&blocks[0], sendCounts, displs, MPI_DOUBLE, &block[0], 4, MPI_DOUBLE, 0, MPI_COMM_MIN);
+		// Вызов MPI_Scatter также отсылает блок в родительский процесс, что приводит к чтению данных из буфера отправки
+		// В результате 26-й процесс считывает данные за пределами буфера.
+		//MPI_Scatter(&blocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MIN);
+		MPI_Scatterv(&blocks[0], sendCounts, displs, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MIN);
 
 		if (minGroupRank == 0) {
 			MPI_Reduce(MPI_IN_PLACE, &globalMin, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_MIN);
@@ -171,7 +171,10 @@ int main(int argc, char* argv[]) {
 		int maxGroupRank;
 		MPI_Comm_rank(MPI_COMM_MAX, &maxGroupRank);
 
-		MPI_Scatterv(&blocks[0], sendCounts, displs, MPI_DOUBLE, &block[0], 4, MPI_DOUBLE, 0, MPI_COMM_MAX);
+		// Вызов MPI_Scatter также отсылает блок в родительский процесс, что приводит к чтению данных из буфера отправки
+		// В результате 26-й процесс считывает данные за пределами буфера.
+		//MPI_Scatter(&blocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MAX);
+		MPI_Scatterv(&blocks[0], sendCounts, displs, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MAX);
 
 		if (maxGroupRank == 0) {
 			MPI_Reduce(MPI_IN_PLACE, &globalMax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_MAX);
