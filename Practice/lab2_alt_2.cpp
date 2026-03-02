@@ -1,3 +1,4 @@
+#include "lab2_alt_2.h"
 #include <iostream>
 #include <string>
 #include <format>
@@ -34,7 +35,7 @@ void printMatrix(T(&matrix)[R][C]) {
 	cout << matrixToStr(matrix) << endl;
 }
 
-int main(int argc, char* argv[]) {
+void lab2_alt_2(int argc, char* argv[]) {
 	const int
 		COLS_NUM = 10,
 		ROWS_NUM = 10,
@@ -141,7 +142,7 @@ int main(int argc, char* argv[]) {
 
 
 		if (evenRank == 0) {
-			cout << "Минимум группы EVEN: " << globalMin << endl; 
+			cout << "Минимум группы EVEN: " << globalMin << endl;
 		}
 	}
 
@@ -150,7 +151,7 @@ int main(int argc, char* argv[]) {
 		MPI_Comm_rank(MPI_COMM_ODD, &oddRank);
 
 		MPI_Scatter(&oddBlocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_ODD);
-		
+
 		double
 			localMax = -INFINITY,
 			globalMax = -INFINITY;
@@ -168,6 +169,11 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	if (MPI_COMM_EVEN != MPI_COMM_NULL) MPI_Comm_free(&MPI_COMM_EVEN);
+	if (MPI_COMM_ODD != MPI_COMM_NULL) MPI_Comm_free(&MPI_COMM_ODD);
+	if (evenGroup != MPI_GROUP_NULL) MPI_Group_free(&evenGroup);
+	if (oddGroup != MPI_GROUP_NULL) MPI_Group_free(&oddGroup);
+	if (worldGroup != MPI_GROUP_NULL) MPI_Group_free(&worldGroup);
+
 	MPI_Finalize();
-	return 0;
 }

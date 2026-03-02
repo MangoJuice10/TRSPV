@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -21,8 +21,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{8fede189-96a5-40c4-8a49-6546e423b6cb}</ProjectGuid>
-    <RootNamespace>Practice</RootNamespace>
+    <ProjectGuid>{4d6f465d-ad06-4758-8a40-88b97375d434}</ProjectGuid>
+    <RootNamespace>ТРСПВЛР3</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -130,17 +130,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="lab1.cpp" />
-    <ClCompile Include="lab2.cpp" />
-    <ClCompile Include="lab2_alt.cpp" />
-    <ClCompile Include="lab2_alt_2.cpp" />
     <ClCompile Include="main.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="lab1.h" />
-    <ClInclude Include="lab2.h" />
-    <ClInclude Include="lab2_alt.h" />
-    <ClInclude Include="lab2_alt_2.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
