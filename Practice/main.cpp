@@ -78,9 +78,12 @@ int main(int argc, char* argv[]) {
 	MPI_Comm_create(MPI_COMM_WORLD, oddGroup, &MPI_COMM_ODD);
 
 	double blocks[TOTAL_BLOCKS_NUM][ELS_PER_BLOCK];
-	double evenBlocks[EVEN_BLOCKS_NUM][ELS_PER_BLOCK];
-	double oddBlocks[ODD_BLOCKS_NUM][ELS_PER_BLOCK];
 	double block[ELS_PER_BLOCK];
+	int
+		sendCountsEven[EVEN_PROCS_NUM],
+		sendCountsOdd[ODD_PROCS_NUM],
+		displsEven[EVEN_PROCS_NUM],
+		displsOdd[ODD_PROCS_NUM];
 
 	if (rank == 0) {
 		double A[ROWS_NUM][COLS_NUM];
@@ -95,38 +98,39 @@ int main(int argc, char* argv[]) {
 		for (size_t i = 0; i < ROWS_NUM; i += 2) {
 			for (size_t j = 0; j < COLS_NUM; j += 2) {
 				int blockIdx = 5 * (i / 2) + (j / 2);
-				blocks[blockIdx][0] = A[i][j];
-				blocks[blockIdx][1] = A[i][j + 1];
-				blocks[blockIdx][2] = A[i + 1][j];
-				blocks[blockIdx][3] = A[i + 1][j + 1];
-			}
-		}
-
-		for (size_t i = 0; i < TOTAL_BLOCKS_NUM; i++) {
-			size_t blockIdx = i + 1;
-			if (blockIdx % 2 == 0) {
-				int evenBlockIdx = (i - 1) / 2;
-				for (size_t j = 0; j < ELS_PER_BLOCK; j++) {
-					evenBlocks[evenBlockIdx][j] = blocks[i][j];
-				}
-			}
-			else {
-				int oddBlockIdx = i / 2;
-				for (size_t j = 0; j < ELS_PER_BLOCK; j++) {
-					oddBlocks[oddBlockIdx][j] = blocks[i][j];
+				for (size_t k = 0; k < 2; k++) {
+					for (size_t l = 0; l < 2; l++) {
+						blocks[blockIdx][k * 2 + l] = A[i + k][j + l];
+					}
 				}
 			}
 		}
 
-		printMatrix(evenBlocks);
-		printMatrix(oddBlocks);
+		cout << format("Матрица блоков: \n{}", matrixToStr(blocks)) << endl;
+
+		int displEven = 4;
+		for (size_t i = 0; i < EVEN_PROCS_NUM; i++) {
+			sendCountsEven[i] = ELS_PER_BLOCK;
+			displsEven[i] = displEven;
+			displEven += 8;
+		}
+
+		int displOdd = 0;
+		for (size_t i = 0; i < ODD_PROCS_NUM; i++) {
+			sendCountsOdd[i] = ELS_PER_BLOCK;
+			displsOdd[i] = displOdd;
+			displOdd += 8;
+		}
+
+		cout << format("Массив смещений для чётных блоков: \n{}", arrToStr(displsEven)) << endl;
+		cout << format("Массив смещений для нечётных блоков: \n{}", arrToStr(displsOdd)) << endl;
 	}
 
 	if (MPI_COMM_EVEN != MPI_COMM_NULL) {
 		int evenRank;
 		MPI_Comm_rank(MPI_COMM_EVEN, &evenRank);
 
-		MPI_Scatter(&evenBlocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_EVEN);
+		MPI_Scatterv(&blocks[0], sendCountsEven, displsEven, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_EVEN);
 
 		double
 			localMin = INFINITY,
@@ -149,7 +153,7 @@ int main(int argc, char* argv[]) {
 		int oddRank;
 		MPI_Comm_rank(MPI_COMM_ODD, &oddRank);
 
-		MPI_Scatter(&oddBlocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_ODD);
+		MPI_Scatterv(&blocks[0], sendCountsOdd, displsOdd, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_ODD);
 		
 		double
 			localMax = -INFINITY,

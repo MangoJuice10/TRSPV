@@ -41,8 +41,6 @@ int main(int argc, char* argv[]) {
 		PROCS_N = 4;
 
 	MPI_Init(&argc, &argv);
-	int rank;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
 	MPI_Comm MPI_COMM_RING;
 	int dims[1] = { N };
@@ -64,7 +62,10 @@ int main(int argc, char* argv[]) {
 
 	const int offset = 10;
 
-	if (rank == 0) {
+	int ringRank;
+	MPI_Comm_rank(MPI_COMM_RING, &ringRank);
+
+	if (ringRank == 0) {
 		for (int i = 0; i < N; i++) {
 			for (int j = 0; j < N; j++) {
 				A[i][j] = (N * i) + j + offset;
@@ -84,11 +85,8 @@ int main(int argc, char* argv[]) {
 	MPI_Scatter(&A[0], N, MPI_INT, &rowA[0], N, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Scatter(&B[0], N, MPI_INT, &rowB[0], N, MPI_INT, 0, MPI_COMM_WORLD);
 
-	cout << format("Строка матрицы A, полученная процессом {}: \n{}", rank, arrToStr(rowA)) << endl;
-	cout << format("Строка матрицы B, полученная процессом {}: \n{}", rank, arrToStr(rowB)) << endl;
-
-	int ringRank;
-	MPI_Comm_rank(MPI_COMM_RING, &ringRank);
+	cout << format("Строка матрицы A, полученная процессом {}: \n{}", ringRank, arrToStr(rowA)) << endl;
+	cout << format("Строка матрицы B, полученная процессом {}: \n{}", ringRank, arrToStr(rowB)) << endl;
 
 	int left = (ringRank - 1 + PROCS_N) % PROCS_N;
 	int right = (ringRank + 1) % PROCS_N;
@@ -97,17 +95,24 @@ int main(int argc, char* argv[]) {
 	cout << format("Процесс-получатель для процесса {}: {}", ringRank, right) << endl;
 
 	for (int iter = 0; iter < N; iter++) {
-		int i = (rank - iter + N) % N;
+		int i = (ringRank - iter + N) % N;
 		for (int j = 0; j < N; j++) {
 			rowC[j] += rowA[i] * rowB[j];
 		}
 		MPI_Sendrecv_replace(rowB, N, MPI_INT, right, 0, left, 0, MPI_COMM_RING, MPI_STATUS_IGNORE);
 	}
 
-	MPI_Gather(rowC, N, MPI_INT, C, N, MPI_INT, 0, MPI_COMM_RING);
+	int localC[N][N];
 
-	if (rank == 0) {
-		cout << format("Результирующая матрица C: \n{}", matrixToStr(C)) << endl;
+	for (int i = 0; i < N; i++) {
+		MPI_Sendrecv_replace(localC, N * N, MPI_INT, right, 0, left, 0, MPI_COMM_RING, MPI_STATUS_IGNORE);
+		for (int j = 0; j < N; j++) {
+			localC[ringRank][j] = rowC[j];
+		}
+	}
+
+	if (ringRank == 0) {
+		cout << format("Результирующая матрица C: \n{}", matrixToStr(localC)) << endl;
 	}
 
 	MPI_Comm_free(&MPI_COMM_RING);
