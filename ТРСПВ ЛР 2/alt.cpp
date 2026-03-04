@@ -41,7 +41,7 @@ void printMatrix(double(&matrix)[R][C]) {
 	cout << matrixToStr(matrix) << endl;
 }
 
-int main(int argc, char* argv[]) {
+int temp(int argc, char* argv[]) {
 	MPI_Init(&argc, &argv);
 	int rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -53,8 +53,8 @@ int main(int argc, char* argv[]) {
 		BLOCKS_NUM = 25,
 		ELS_PER_BLOCK = 4,
 
-		TOTAL_PROCS_NUM = 51,
-		GROUP_PROCS_NUM = 26;
+		TOTAL_PROCS_NUM = 49,
+		GROUP_PROCS_NUM = 25;
 
 	MPI_Group
 		worldGroup,
@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
 
 	for (int i = 1; i < GROUP_PROCS_NUM; i++) {
 		minRanks[i] = i;
-		maxRanks[i] = 25 + i;
+		maxRanks[i] = 24 + i;
 	}
 
 	MPI_Group_incl(worldGroup, GROUP_PROCS_NUM, minRanks, &minGroup);
@@ -86,8 +86,6 @@ int main(int argc, char* argv[]) {
 
 	double blocks[BLOCKS_NUM][ELS_PER_BLOCK];
 	double block[ELS_PER_BLOCK];
-	int sendCounts[GROUP_PROCS_NUM];
-	int displs[GROUP_PROCS_NUM];
 
 	if (rank == 0) {
 		cout << format("Ранги процессов группы MIN: {}", arrToStr(minRanks)) << endl;
@@ -116,21 +114,7 @@ int main(int argc, char* argv[]) {
 			}
 		}
 		cout << endl;
-		cout << format("Блоки для отправки в дочерние процессы: \n{}", matrixToStr(blocks)) << endl;
-
-		for (size_t i = 0; i < GROUP_PROCS_NUM; i++) {
-			if (i == 0) sendCounts[i] = 0;
-			else sendCounts[i] = 4;
-		}
-
-		int displ = 0;
-		for (size_t i = 0; i < GROUP_PROCS_NUM; i++) {
-			if (i == 0) displs[i] = 0;
-			else {
-				displs[i] = displ;
-				displ += ELS_PER_BLOCK;
-			}
-		}
+		cout << format("Блоки для отправки в процессы: \n{}", matrixToStr(blocks)) << endl;
 	}
 
 	if (MPI_COMM_MIN != MPI_COMM_NULL) {
@@ -140,27 +124,17 @@ int main(int argc, char* argv[]) {
 
 		int minGroupRank;
 		MPI_Comm_rank(MPI_COMM_MIN, &minGroupRank);
+		MPI_Scatter(&blocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MIN);
 
-		// Вызов MPI_Scatter также отсылает блок в родительский процесс, что приводит к чтению данных из буфера отправки
-		// В результате 26-й процесс считывает данные за пределами буфера.
-		//MPI_Scatter(&blocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MIN);
-		MPI_Scatterv(&blocks[0], sendCounts, displs, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MIN);
-
-		if (minGroupRank == 0) {
-			MPI_Reduce(MPI_IN_PLACE, &globalMin, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_MIN);
-			cout << endl;
-			cout << "Глобальный минимум: " << globalMin << endl << endl;
+		cout << format("Процесс с рангом {} группы MIN получил блок: {}", minGroupRank, arrToStr(block)) << endl;
+		localMin = block[0];
+		for (int i = 1; i < ELS_PER_BLOCK; i++) {
+			if (localMin > block[i]) localMin = block[i];
 		}
-		else {
-			cout << format("Процесс с рангом {} группы MIN получил блок: {}", minGroupRank, arrToStr(block)) << endl;
-			localMin = block[0];
-			for (int i = 1; i < ELS_PER_BLOCK; i++) {
-				if (localMin > block[i]) localMin = block[i];
-			}
-			cout << format("Локальный минимум процесса с рангом {}: {}", minGroupRank, localMin) << endl;
+		cout << format("Локальный минимум процесса с рангом {}: {}", minGroupRank, localMin) << endl;
 
-			MPI_Reduce(&localMin, &globalMin, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_MIN);
-		}
+		MPI_Reduce(&localMin, &globalMin, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_MIN);
+		if (minGroupRank == 0) cout << "Глобальный минимум: " << globalMin << endl << endl;
 	}
 
 	if (MPI_COMM_MAX != MPI_COMM_NULL) {
@@ -170,28 +144,19 @@ int main(int argc, char* argv[]) {
 
 		int maxGroupRank;
 		MPI_Comm_rank(MPI_COMM_MAX, &maxGroupRank);
+		MPI_Scatter(&blocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MAX);
 
-		// Вызов MPI_Scatter также отсылает блок в родительский процесс, что приводит к чтению данных из буфера отправки
-		// В результате 26-й процесс считывает данные за пределами буфера.
-		//MPI_Scatter(&blocks[0], ELS_PER_BLOCK, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MAX);
-		MPI_Scatterv(&blocks[0], sendCounts, displs, MPI_DOUBLE, &block[0], ELS_PER_BLOCK, MPI_DOUBLE, 0, MPI_COMM_MAX);
-
-		if (maxGroupRank == 0) {
-			MPI_Reduce(MPI_IN_PLACE, &globalMax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_MAX);
-			cout << endl;
-			cout << "Глобальный максимум: " << globalMax << endl << endl;
+		cout << format("Процесс с рангом {} группы MAX получил блок: {}", maxGroupRank, arrToStr(block)) << endl;
+		localMax = block[0];
+		for (int i = 1; i < ELS_PER_BLOCK; i++) {
+			if (localMax < block[i]) localMax = block[i];
 		}
-		else {
-			cout << format("Процесс с рангом {} группы MAX получил блок: {}", maxGroupRank, arrToStr(block)) << endl;
-			localMax = block[0];
-			for (int i = 1; i < ELS_PER_BLOCK; i++) {
-				if (localMax < block[i]) localMax = block[i];
-			}
-			cout << format("Локальный максимум процесса с рангом {}: {}", maxGroupRank, localMax) << endl;
+		cout << format("Локальный максимум процесса с рангом {}: {}", maxGroupRank, localMax) << endl;
 
-			MPI_Reduce(&localMax, &globalMax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_MAX);
-		}
-	}
+		MPI_Reduce(&localMax, &globalMax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_MAX);
+		
+		if (maxGroupRank == 0) cout << "Глобальный максимум: " << globalMax << endl << endl;
+	} 
 
 	if (MPI_COMM_MIN != MPI_COMM_NULL) MPI_Comm_free(&MPI_COMM_MIN);
 	if (MPI_COMM_MAX != MPI_COMM_NULL) MPI_Comm_free(&MPI_COMM_MAX);

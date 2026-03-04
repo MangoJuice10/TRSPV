@@ -102,13 +102,15 @@ int main(int argc, char* argv[]) {
 		MPI_Sendrecv_replace(rowB, N, MPI_INT, right, 0, left, 0, MPI_COMM_RING, MPI_STATUS_IGNORE);
 	}
 
-	int localC[N][N];
+	int localC[N][N] = { {0} };
 
 	for (int i = 0; i < N; i++) {
 		MPI_Sendrecv_replace(localC, N * N, MPI_INT, right, 0, left, 0, MPI_COMM_RING, MPI_STATUS_IGNORE);
+		cout << format("Получаемая процессом {} матрица: \n{}", ringRank, matrixToStr(localC)) << endl;
 		for (int j = 0; j < N; j++) {
 			localC[ringRank][j] = rowC[j];
 		}
+		cout << format("Отправляемая процессом {} матрица: \n{}", ringRank, matrixToStr(localC)) << endl;
 	}
 
 	if (ringRank == 0) {
@@ -119,3 +121,5 @@ int main(int argc, char* argv[]) {
 	MPI_Finalize();
 	return 0;
 }
+
+

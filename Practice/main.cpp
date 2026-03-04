@@ -113,6 +113,7 @@ int main(int argc, char* argv[]) {
 			sendCountsEven[i] = ELS_PER_BLOCK;
 			displsEven[i] = displEven;
 			displEven += 8;
+
 		}
 
 		int displOdd = 0;
