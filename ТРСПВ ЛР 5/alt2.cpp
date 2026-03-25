@@ -2,13 +2,9 @@
 #include <vector>
 #include <queue>
 #include "mpi.h"
-#include <random>
-#include <chrono>
-#include <thread>
 #include <string>
 #include <format>
 using namespace std;
-using namespace chrono;
 
 namespace {
 	const int
@@ -71,15 +67,6 @@ namespace {
 		cout << queuesToStr(queues) << endl;
 	}
 
-	template <typename T>
-	string vectorToStr(vector<T> vector) {
-		string result = "";
-		for (T element : vector) {
-			result += to_string(element) + " ";
-		}
-		return result;
-	}
-
 	void filterOutputByResource(string output, int currentResourceID, int targetResourceID = -1) {
 		if (targetResourceID == -1) {
 			cout << output << endl;
@@ -94,6 +81,7 @@ namespace {
 	vector<priority_queue<QueueItem>> resourceQueues(RS_NUM);
 
 	vector<int> ackCount(RS_NUM, 0);
+	vector<int> confirmations(RS_NUM, 0);
 
 	void incrementLogicalClock() {
 		logicalClock++;
@@ -232,15 +220,7 @@ namespace {
 		sendBroadcast(msg, clientID);
 	}
 
-	bool isInQueue(priority_queue<QueueItem> resourceQueue, int clientID) {
-		while (!resourceQueue.empty()) {
-			if (resourceQueue.top().clientID == clientID) return true;
-			resourceQueue.pop();
-		}
-		return false;
-	}
-
-	void enqueueSelf(int clientID, int resourceID, int logicalClock) {
+	void enqueueSelf(int clientID, int resourceID) {
 		filterOutputByResource(
 			format(
 				"[Клиент {}] получил все подтверждающие сообщения для [Операция P] для [Ресурс {}]",
@@ -249,7 +229,7 @@ namespace {
 			),
 			resourceID
 		);
-		resourceQueues[resourceID].push({ logicalClock , clientID });
+		resourceQueues[resourceID].push({ baseLogicalClock, clientID });
 		filterOutputByResource(
 			format(
 				"[Клиент {}]: Состояние очереди [Ресурс {}] после получения подтверждения [Операция P]:\n{}",
@@ -259,12 +239,13 @@ namespace {
 			),
 			resourceID
 		);
+		confirmations[resourceID] = 1;
 	}
 
 }
 
 
-int main(int argc, char* argv[]) {
+int alt2(int argc, char* argv[]) {
 	MPI_Init(&argc, &argv);
 	int rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -272,29 +253,11 @@ int main(int argc, char* argv[]) {
 	int clientID = rank - CL_BASE_RANK;
 	MPI_Status status;
 
-	auto seed = high_resolution_clock::now().time_since_epoch().count() + rank * 1337;
-	mt19937 rng(seed);
-	uniform_int_distribution<int> reqDist(1, 5);
-	uniform_int_distribution<int> resDist(0, RS_NUM - 1);
-	uniform_int_distribution<int> delayDist(100, 1000);
-
-	int requestsNum = reqDist(rng);
-
-	vector<int> resourceIndices(requestsNum);
-	for (size_t i = 0; i < resourceIndices.size(); i++) {
-		resourceIndices[i] = resDist(rng);
-	}
-	cout << format(
-		"Клиент {} делает {} запросов на ресурсы: {}",
-		clientID,
-		requestsNum,
-		vectorToStr(resourceIndices)
-	) << endl;
-
+	int requestsNum = rand() % 3 + 1;
 	for (int i = 0; i < requestsNum; i++) {
-		int resourceID = resourceIndices[i];
+		int resourceID = i;
 		requestResource(clientID, resourceID);
-		ackCount[resourceID] = 0;
+		confirmations[resourceID] = 0;
 		while (true) {
 			int flag;
 			MPI_Iprobe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &flag, &status);
@@ -302,28 +265,22 @@ int main(int argc, char* argv[]) {
 			else continue;
 
 			if (ackCount[resourceID] == CL_NUM - 1) {
-				if (!isInQueue(resourceQueues[resourceID], clientID)) enqueueSelf(clientID, resourceID, baseLogicalClock);
+				enqueueSelf(clientID, resourceID);
+				ackCount[resourceID] = 0;
+			}
 
+			if (confirmations[resourceID]) {
 				QueueItem top = resourceQueues[resourceID].top();
 				if (top.clientID == clientID) {
 					filterOutputByResource(
 						format(
-							"[Клиент {}] захватывает ресурс [Ресурс {}]",
+							"[Клиент {}] получил доступ к ресурсу [Ресурс {}]",
 							clientID,
 							resourceID
 						),
 						resourceID
 					);
-					this_thread::sleep_for(milliseconds(delayDist(rng)));
 					semaphores[resourceID] = 0;
-					filterOutputByResource(
-						format(
-							"[Клиент {}] освобождает ресурс [Ресурс {}]",
-							clientID,
-							resourceID
-						),
-						resourceID
-					);
 					releaseResource(clientID, resourceID);
 					break;
 				}
@@ -332,19 +289,6 @@ int main(int argc, char* argv[]) {
 				}
 			}
 		}
-	}
-
-	cout << format(
-		"Клиент {} полностью обработал ресурсы: {}",
-		clientID,
-		vectorToStr(resourceIndices)
-	) << endl;
-
-	while (true) {
-		int flag;
-		MPI_Iprobe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &flag, &status);
-		if (flag) recvMessage(status.MPI_SOURCE - CL_BASE_RANK, clientID);
-		else continue;
 	}
 
 	MPI_Finalize();
