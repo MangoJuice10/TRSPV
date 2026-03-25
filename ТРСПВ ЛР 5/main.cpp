@@ -63,7 +63,7 @@ namespace {
 		return result;
 	}
 
-	void printQueue(priority_queue<QueueItem> queue, int resourceID) {
+	void printQueue(priority_queue<QueueItem>& queue, int resourceID) {
 		cout << queueToStr(queue, resourceID) << endl;
 	}
 
@@ -72,7 +72,7 @@ namespace {
 	}
 
 	template <typename T>
-	string vectorToStr(vector<T> vector) {
+	string vectorToStr(vector<T>& vector) {
 		string result = "";
 		for (T element : vector) {
 			result += to_string(element) + " ";
