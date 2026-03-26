@@ -17,7 +17,7 @@ string arrToStr(vector<T> arr) {
 
 string addLines(string str) {
 	const string LINE = "------------------------------------------------------------------------------------------------------------------------------------------------\n";
-	return LINE + str + LINE;
+	return LINE + str + "\n" + LINE;
 }
 
 template <typename T>
@@ -35,6 +35,10 @@ void shellSort(vector<T>& arr) {
 			arr[j] = temp;
 		}
 	}
+}
+
+int findPairProcess(int rank, int shift) {
+	return rank ^ (1 << shift);
 }
 
 template <typename T>
@@ -78,11 +82,14 @@ void merge(vector<T>& result, vector<T>& arr1, vector<T>& arr2) {
 }
 
 template<typename T>
-void halve(vector<T>& destArr, vector<T>& srcArr, bool firstHalf = true) {
-	size_t half = destArr.size();
+void modify(vector<T>& destArr, vector<T>& srcArr, int offset, int size) {
+	copy(srcArr.begin() + offset, srcArr.begin() + offset + size, destArr.begin());
+}
 
-	if (firstHalf) copy(srcArr.begin(), srcArr.begin() + half, destArr.begin());
-	else copy(srcArr.end() - half, srcArr.end(), destArr.begin());
+template<typename T>
+bool verifySortedArr(vector<T>& sortedArr, vector<T> srcArr) {
+	shellSort(srcArr);
+	return sortedArr == srcArr;
 }
 
 int main(int argc, char* argv[]) {
@@ -92,62 +99,102 @@ int main(int argc, char* argv[]) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+	srand(time(0));
+
 	int N = static_cast<int>(log2(size));
 
-	const int DATA_SIZE = 16;
+	const int BLOCK_SIZE = (rand() % 4 + 1);
+	const int IRREGULARITY = (rand() % BLOCK_SIZE);
+	const int IRREGULAR_BLOCK_SIZE = IRREGULARITY ? BLOCK_SIZE - IRREGULARITY : BLOCK_SIZE;
+
+	const int DATA_SIZE = size * BLOCK_SIZE - IRREGULARITY;
+	const int LOCAL_BLOCK_SIZE = rank == size - 1 ? IRREGULAR_BLOCK_SIZE : BLOCK_SIZE;
+
 	vector<int> data(DATA_SIZE);
 	if (rank == 0) {
-		srand(time(0));
 		for (size_t i = 0; i < DATA_SIZE; i++) {
 			data[i] = rand() % 100;
 		}
-
-		cout << addLines(format("Исходный массив: {}\n", arrToStr(data))) << endl;
+		cout << addLines(format("Исходный массив: {}\nКоличество элементов в массиве: {}\nПоследний процесс имеет {} элементов, в то время как остальные имеют {} элементов", arrToStr(data), DATA_SIZE, IRREGULAR_BLOCK_SIZE, BLOCK_SIZE)) << endl;
 	}
 
-	const int BLOCK_SIZE = DATA_SIZE / size;
-	vector<int> block(BLOCK_SIZE);
-	vector<int> recvBlock(BLOCK_SIZE);
-	vector<int> result(BLOCK_SIZE * 2);
+	vector<int> initialData = data;
 
-	MPI_Scatter(data.data(), BLOCK_SIZE, MPI_INT, block.data(), BLOCK_SIZE, MPI_INT, 0, MPI_COMM_WORLD);
+	vector<int> block(LOCAL_BLOCK_SIZE);
+
+	vector<int> sendCounts(size, BLOCK_SIZE);
+	sendCounts[size - 1] = IRREGULAR_BLOCK_SIZE;
+
+	vector<int> displs(size, 0);
+	for (size_t i = 1; i < size; i++) {
+		displs[i] = displs[i - 1] + sendCounts[i - 1];
+	}
+
+	const int LAST_PROCESS_RANK = size - 1;
+
+	MPI_Scatterv(data.data(), sendCounts.data(), displs.data(), MPI_INT, block.data(), sendCounts[rank], MPI_INT, 0, MPI_COMM_WORLD);
+
+	cout << format("[Процесс {}]: получен локальный блок: {}\n", rank, arrToStr(block)) << endl;
+
 	shellSort(block);
 
-	if (rank == 0) {
-		cout << addLines("Сортировка Шелла\n") << endl;
-	}
+	// Parallel Shell sort only applies to a hypercube
+	if (size == static_cast<int>(pow(2, N))) {
+		if (rank == 0) {
+			cout << addLines("Сортировка Шелла") << endl;
+		}
 
-	for (size_t i = 0; i < N; i++) {
-		int partnerRank = rank ^ (1 << (N - i - 1));
-		MPI_Sendrecv(block.data(), BLOCK_SIZE, MPI_INT, partnerRank, 0, recvBlock.data(), BLOCK_SIZE, MPI_INT, partnerRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		for (size_t i = 0; i < N; i++) {
+			int partnerRank = findPairProcess(rank, N - i - 1);
 
-		merge(result, block, recvBlock);
+			const int SEND_BLOCK_SIZE =
+				rank == LAST_PROCESS_RANK
+				? IRREGULAR_BLOCK_SIZE
+				: BLOCK_SIZE;
 
-		cout << format(
-			"[Процесс {}] Локальный блок: {}\n[Процесс {}]: Получен блок от процесса {}: {}\n[Процесс {}]: Результирующий блок: {}\n\n",
-			rank,
-			arrToStr(block),
-			rank,
-			partnerRank,
-			arrToStr(recvBlock),
-			rank,
-			arrToStr(result)
-		);
+			const int RECV_BLOCK_SIZE =
+				partnerRank == LAST_PROCESS_RANK
+				? IRREGULAR_BLOCK_SIZE
+				: BLOCK_SIZE;
 
-		halve(block, result, rank < partnerRank);
+			vector<int> recvBlock(RECV_BLOCK_SIZE);
+			vector<int> result(SEND_BLOCK_SIZE + RECV_BLOCK_SIZE);
 
-		cout << format(
-			"[Процесс{}]: Модифицированный локальный блок: {}\n\n",
-			rank,
-			arrToStr(block)
-		);
+			MPI_Sendrecv(block.data(), SEND_BLOCK_SIZE, MPI_INT, partnerRank, 0, recvBlock.data(), RECV_BLOCK_SIZE, MPI_INT, partnerRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			merge(result, block, recvBlock);
+
+			cout << format(
+				"[Процесс {}] Локальный блок: {}\n[Процесс {}]: Получен блок от процесса {}: {}\n[Процесс {}]: Результирующий блок: {}\n\n",
+				rank,
+				arrToStr(block),
+				rank,
+				partnerRank,
+				arrToStr(recvBlock),
+				rank,
+				arrToStr(result)
+			);
+
+			// Offset is always equal to the regular block size,
+			// as the last process will always take the second part
+			// of the resulting block.
+			int offset = rank < partnerRank ? 0 : BLOCK_SIZE;
+			int size = LOCAL_BLOCK_SIZE;
+			modify(block, result, offset, size);
+
+			cout << format(
+				"[Процесс {}]: Модифицированный локальный блок: {}\n\n",
+				rank,
+				arrToStr(block)
+			);
+			MPI_Barrier(MPI_COMM_WORLD);
+		}
+
 		MPI_Barrier(MPI_COMM_WORLD);
 	}
 
-	MPI_Barrier(MPI_COMM_WORLD);
-
 	if (rank == 0) {
-		cout << addLines("Четная-Нечетная перестановка\n") << endl;
+		cout << addLines("Четная-Нечетная перестановка") << endl;
 	}
 
 	for (size_t i = 0; i < size; i++) {
@@ -167,7 +214,20 @@ int main(int argc, char* argv[]) {
 				? (isProcessRankEven ? 1 : -1)
 				: (isProcessRankEven ? -1 : 1));
 
-			MPI_Sendrecv(block.data(), BLOCK_SIZE, MPI_INT, partnerRank, 0, recvBlock.data(), BLOCK_SIZE, MPI_INT, partnerRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			const int SEND_BLOCK_SIZE =
+				rank == LAST_PROCESS_RANK
+				? IRREGULAR_BLOCK_SIZE
+				: BLOCK_SIZE;
+
+			const int RECV_BLOCK_SIZE =
+				partnerRank == LAST_PROCESS_RANK
+				? IRREGULAR_BLOCK_SIZE
+				: BLOCK_SIZE;
+
+			vector<int> recvBlock(RECV_BLOCK_SIZE);
+			vector<int> result(SEND_BLOCK_SIZE + RECV_BLOCK_SIZE);
+
+			MPI_Sendrecv(block.data(), SEND_BLOCK_SIZE, MPI_INT, partnerRank, 0, recvBlock.data(), RECV_BLOCK_SIZE, MPI_INT, partnerRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 			merge(result, block, recvBlock);
 			cout << format(
@@ -181,7 +241,9 @@ int main(int argc, char* argv[]) {
 				arrToStr(result)
 			);
 
-			halve(block, result, rank < partnerRank);
+			int offset = rank < partnerRank ? 0 : BLOCK_SIZE;
+			int size = LOCAL_BLOCK_SIZE;
+			modify(block, result, offset, size);
 
 			cout << format(
 				"[Процесс{}]: Модифицированный локальный блок: {}\n\n",
@@ -193,10 +255,15 @@ int main(int argc, char* argv[]) {
 		MPI_Barrier(MPI_COMM_WORLD);
 	}
 
-	MPI_Gather(block.data(), BLOCK_SIZE, MPI_INT, data.data(), BLOCK_SIZE, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Gatherv(block.data(), LOCAL_BLOCK_SIZE, MPI_INT, data.data(), sendCounts.data(), displs.data(), MPI_INT, 0, MPI_COMM_WORLD);
 
 	if (rank == 0) {
-		cout << addLines(format("Отсортированный массив: {}\n", arrToStr(data))) << endl;
+		if (verifySortedArr(data, initialData)) {
+			cout << addLines(format("Отсортированный массив: {}\nКоличество элементов в массиве: {}\nПоследний процесс имеет {} элементов, в то время как остальные имеют {} элементов", arrToStr(data), DATA_SIZE, IRREGULAR_BLOCK_SIZE, BLOCK_SIZE)) << endl;
+		}
+		else {
+			cout << addLines(format("Массив был отсортирован неправильно: {}", arrToStr(data))) << endl;
+		}
 	}
 
 	MPI_Finalize();
